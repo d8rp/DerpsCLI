@@ -1,8 +1,7 @@
 ﻿using System.Runtime.InteropServices;
 using TerraFX.Interop.Windows;
 using static TerraFX.Interop.Windows.Windows;
-using System.Drawing;
-using static System.Net.Mime.MediaTypeNames;
+using System;
 
 [assembly: System.Runtime.Versioning.SupportedOSPlatformAttribute("windows")]
 
@@ -37,6 +36,7 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
     {
         if (FirstInput)
         {
+            Console.WriteLine("First input");
             FirstInput = false;
             Redraw = true;
         }
@@ -87,6 +87,9 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
 
         AddCharTyped(character);
 
+        // Force OS to draw the window (and send us WM_PAINT message)
+        InvalidateRect(window, null, BOOL.FALSE);
+
         return 0;
     }
 
@@ -98,6 +101,7 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
         // Filling in the background
         if (Redraw)
         {
+            Console.WriteLine("Redraw");
             FillRect(deviceContextHandle, &ps.rcPaint, HBRUSH.NULL);
             Redraw = false;
         }
@@ -112,8 +116,21 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
 
             Console.WriteLine(String.Format("Rendering: {0} at ({1},{2})", text, x, y));
 
-            // Render the text using TextOutW
-            TextOutW(deviceContextHandle, x, y, text, text.Length);
+            // Define bounding rectangle
+            RECT r = new RECT(0, 0, 0, 0);
+
+            // Convert string to char* (win32)
+            fixed (char* p = text)
+            {
+                DrawText(deviceContextHandle, p, text.Length, &r, 
+                    DT.DT_CALCRECT | DT.DT_NOPREFIX | DT.DT_SINGLELINE); // DrawText is used to get the size of the text
+            }
+
+
+            TextOut(deviceContextHandle, cursor.X, cursor.Y, text, text.Length);
+            
+            // Move the cursor accordingly
+            cursor = new(cursor.X + Math.Abs(r.right - r.left), cursor.Y);
 
             // Clear the CharTyped Queue
             ClearCharTyped();
@@ -230,7 +247,7 @@ partial class Program
 
     private static bool Redraw;
 
-    private static bool FirstInput = false;
+    private static bool FirstInput = true;
 
     static Queue<String> CharTyped = new();
 
@@ -239,15 +256,10 @@ partial class Program
     static object queueLock = new object();
 
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool TextOutW(IntPtr hdc, int x, int y, string lpString, int nCount);
+    public static extern bool TextOut(IntPtr hdc, int x, int y, string lpString, int nCount);
 
     [DllImport("gdi32.dll", SetLastError = true)]
     public static extern IntPtr CreateFontW(int nHeight, int nWidth, int nEscapement, int nOrientation, int fnWeight, uint fdwItalic, uint fdwUnderline, uint fdwStrikeOut, uint fdwCharSet, uint fdwOutputPrecision, uint fdwClipPrecision, uint fdwQuality, uint fdwPitchAndFamily, string lpszFace);
 
-    [DllImport("gdi32.dll", SetLastError = true)]
-    public static extern IntPtr SelectObject(IntPtr hdc, IntPtr h);
-
-    [DllImport("gdi32.dll", SetLastError = true)]
-    public static extern bool DeleteObject(IntPtr hObject);
     record InputCursor(int X, int Y);
 }
