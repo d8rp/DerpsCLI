@@ -28,6 +28,7 @@ namespace DerpsCLI
         {
             while (position < _gapWindow.from)
             {
+                Console.WriteLine("MoveFromPtrTo");
                 _gapWindow = new(_gapWindow.from - 1, _gapWindow.to - 1);
                 _textBuffer[_gapWindow.to + 1] = _textBuffer[_gapWindow.from];
                 _textBuffer[_gapWindow.from] = '\0'; // NULL character
@@ -38,6 +39,7 @@ namespace DerpsCLI
         {
             while (position > _gapWindow.from)
             {
+                Console.WriteLine("MoveToPtrTo");
                 _gapWindow = new(_gapWindow.from + 1, _gapWindow.to + 1);
                 _textBuffer[_gapWindow.from - 1] = _textBuffer[_gapWindow.to];
                 _textBuffer[_gapWindow.to] = '\0'; // NULL character
@@ -60,6 +62,9 @@ namespace DerpsCLI
         {
             // Insert 'numberOfNulls' '\0' (null character) at the specified index
             _textBuffer.InsertRange(position, Enumerable.Repeat('\0', size));
+
+            // Update _gapWindow pointers
+            _gapWindow = new(position, position + size - 1);
         }
 
         public int GetCursorPosition()
@@ -69,13 +74,16 @@ namespace DerpsCLI
 
         public string GetFullText()
         {
+            Console.WriteLine("GetFullText");
             string result = "";
             int i = 0;
             while (i < _textBuffer.Count)
             {
+                // Console.WriteLine("GetFullText and skip: from {0} to {1}", _gapWindow.from, _gapWindow.to);
                 if (i == _gapWindow.from)
                 {
                     i = _gapWindow.to + 1;
+                    continue; // Continue to go to condition (edge case where the buffer resizes and go past the limit)
                 }
                 result += _textBuffer[i];
                 i++;
@@ -96,6 +104,7 @@ namespace DerpsCLI
             int i = 0;
             while (i < len)
             {
+                // Console.WriteLine("Insert");
                 if (_gapWindow.from == _gapWindow.to)
                 {
                     // Gap closed so grow the gap

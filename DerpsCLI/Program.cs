@@ -184,15 +184,6 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
         return 0; // We successfully handled the message
     }
 
-    // Handling when mouse moved in the window
-    if (message == WM.WM_MOUSEMOVE)
-    {
-        // Force OS to draw the window (and send us WM_PAINT message)
-        InvalidateRect(window, null, BOOL.FALSE);
-
-        return 0;
-    }
-
     // Handling when window was resized
     if (message == WM.WM_SIZE)
     {
