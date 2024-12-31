@@ -2,13 +2,15 @@
 using TerraFX.Interop.Windows;
 using static TerraFX.Interop.Windows.Windows;
 using System;
+using DerpsCLI;
+using static System.Net.Mime.MediaTypeNames;
 
 [assembly: System.Runtime.Versioning.SupportedOSPlatformAttribute("windows")]
 
 // Set the display message
 foreach (char character in "Hello, Win32!")
 {
-    AddCharTyped(character);
+    AddToDrawingQueue(character);
 }
 
 var window = CreateWindow();
@@ -37,6 +39,7 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
         if (FirstInput)
         {
             Console.WriteLine("First input");
+            drawCursor = new (10, 10);
             FirstInput = false;
             Redraw = true;
         }
@@ -49,21 +52,8 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
         {
             Console.WriteLine("Enter key was pressed.");
 
-            HDC hdc = GetDC(window);  // Get the device context of the window
-
-            // The character to measure (e.g., the letter 'A')
-            char character = 'A';
-
-            // To get the width, we'll use GetTextExtentPoint32
-            SIZE size;
-
-            GetTextExtentPoint32(hdc, &character, 1, &size);
-
-            // Clean up
-            ReleaseDC(window, hdc);
-
-            // Adcance curson down
-            cursor = new(cursor.X, cursor.Y + (int)((size.cy) * 1.5));
+            // AddToDrawingQueue('\n');
+            AddToTextStorage('\n');
         }
 
         // Example: Handling the 'Escape' key
@@ -85,7 +75,8 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
         
         Console.WriteLine($"Character pressed: {Convert.ToChar(charCode)}");
 
-        AddCharTyped(character);
+        AddToTextStorage(character);
+        // AddToDrawingQueue(character);
 
         // Force OS to draw the window (and send us WM_PAINT message)
         InvalidateRect(window, null, BOOL.FALSE);
@@ -106,34 +97,86 @@ static unsafe LRESULT WinProc(HWND window, uint message, WPARAM wParam, LPARAM l
             Redraw = false;
         }
 
-        // If there is at least one chracter in the queue
-        if (CharTyped.Count > 0)
+        // START from this part this is purely place holder code that is to be optimised
+        // Define bounding rectangle
+        RECT r1 = new RECT(0, 0, 0, 0);
+
+        // Set right margin so that DT_CALCRECT flag works with DT_WORDBREAK flag
+        int rightmarg1 = GetDeviceCaps(deviceContextHandle, HORZRES);
+        r1.right = rightmarg1;
+
+        var text1 = buffer.GetFullText();  // The text you want to display
+
+        fixed (char* p = text1)
         {
+            DrawText(deviceContextHandle, p, text1.Length, &r1,
+                    DT.DT_NOPREFIX | DT.DT_CALCRECT | DT.DT_WORDBREAK);
+
+            // Move rectangle to cursor so text appeart at teh right position
+            r1.left += 10;
+            r1.top += 10;
+            r1.right += 10;
+            r1.bottom += 10;
+
+            Console.WriteLine("{0}, {1}, {2}, {3}", r1.left, r1.top, r1.right, r1.bottom);
+
+            DrawText(deviceContextHandle, p, text1.Length, &r1,
+                DT.DT_NOPREFIX | DT.DT_LEFT | DT.DT_WORDBREAK | DT.DT_EDITCONTROL);
+        }
+        // END
+        if (DrawingQueue.Count > 0)
+        {
+            Console.WriteLine("1");
             // Render the text
-            var text = string.Join("", GetCharTyped());  // The text you want to display
-            var x = cursor.X;  // X coordinate for the text
-            var y = cursor.Y;  // Y coordinate for the text
+            var text = string.Join("", GetDrawingQueue());  // The text you want to display
+            var x = drawCursor.X;  // X coordinate for the text
+            var y = drawCursor.Y;  // Y coordinate for the text
 
             Console.WriteLine(String.Format("Rendering: {0} at ({1},{2})", text, x, y));
 
             // Define bounding rectangle
             RECT r = new RECT(0, 0, 0, 0);
+            int xOffset;
+            int yOffset;
 
+            // Set right margin so that DT_CALCRECT flag works with DT_WORDBREAK flag
+            int rightmarg = GetDeviceCaps(deviceContextHandle, HORZRES);
+            r.right = rightmarg;
+            Console.WriteLine("2");
             // Convert string to char* (win32)
             fixed (char* p = text)
             {
+                Console.WriteLine("3");
                 DrawText(deviceContextHandle, p, text.Length, &r, 
-                    DT.DT_CALCRECT | DT.DT_NOPREFIX | DT.DT_SINGLELINE); // DrawText is used to get the size of the text
+                    DT.DT_CALCRECT | DT.DT_NOPREFIX | DT.DT_WORDBREAK ); // DrawText is used to get the size of the text
+
+                // Set X and Y offset for later use
+                xOffset = Math.Abs(r.right - r.left);
+                yOffset = Math.Abs(r.bottom - r.top);
+
+                // Check if there's a newline in the text
+                // If there's a newline (i.e., cursor moves to a new line), adjust yOffset
+                int lineCount = text.Count(c => c == '\n');
+                yOffset = yOffset*lineCount / (lineCount + 1); // Multiply by the number of lines for multiple newlines and handle case where newline changes the height of bounging box
+                Console.WriteLine("4");
+                // Move rectangle to cursor so text appeart at teh right position
+                r.left += drawCursor.X;
+                r.top += drawCursor.Y;
+                r.right += drawCursor.X;
+                r.bottom += drawCursor.Y;
+
+                Console.WriteLine("{0}, {1}, {2}, {3}", r.left, r.top, r.right, r.bottom);
+                DrawText(deviceContextHandle, p, text.Length, &r,
+                    DT.DT_NOPREFIX | DT.DT_LEFT | DT.DT_WORDBREAK | DT.DT_EDITCONTROL);
             }
 
-
-            TextOut(deviceContextHandle, cursor.X, cursor.Y, text, text.Length);
+            // TextOut(deviceContextHandle, drawCursor.X, drawCursor.Y, text, text.Length);
             
             // Move the cursor accordingly
-            cursor = new(cursor.X + Math.Abs(r.right - r.left), cursor.Y);
+            drawCursor = new(drawCursor.X + xOffset, drawCursor.Y + yOffset);
 
             // Clear the CharTyped Queue
-            ClearCharTyped();
+            ClearDrawingQueue();
         }
 
         // End painting
@@ -213,27 +256,13 @@ static unsafe HWND CreateWindow()
     }
 }
 
-static void AddCharTyped(Char point)
-{
-    lock (queueLock)
-    {
-        CharTyped.Enqueue(point.ToString());
-    }
-}
 
-static IEnumerable<String> GetCharTyped()
-{
-    lock (queueLock)
-    {
-        return CharTyped.ToList();  // Return a copy to prevent direct modification.
-    }
-}
 
-static void ClearCharTyped()
+static IEnumerable<String> GetDrawingQueue()
 {
     lock (queueLock)
     {
-        CharTyped.Clear();
+        return DrawingQueue.ToList();  // Return a copy to prevent direct modification.
     }
 }
 
@@ -244,16 +273,44 @@ static void ClearCharTyped()
 partial class Program
 {
     private static bool Closed;
-
     private static bool Redraw;
-
     private static bool FirstInput = true;
 
-    static Queue<String> CharTyped = new();
+    private static GapBuffer buffer = new GapBuffer();
 
-    static InputCursor cursor = new (10, 10);
-
+    static Queue<String> DrawingQueue = new();
+    static InputDrawCursor drawCursor = new (10, 10);
     static object queueLock = new object();
+    static void AddToDrawingQueue(Char point)
+    {
+        lock (queueLock)
+        {
+            DrawingQueue.Enqueue(point.ToString());
+        }
+    }
+    static void AddToDrawingQueue(String point)
+    {
+        lock (queueLock)
+        {
+            DrawingQueue.Enqueue(point);
+        }
+    }
+    static void ClearDrawingQueue()
+    {
+        lock (queueLock)
+        {
+            DrawingQueue.Clear();
+        }
+    }
+
+    static void AddToTextStorage(Char character)
+    {
+        buffer.Insert(character.ToString(), buffer.GetCursorPosition());
+    }
+    static void AddToTextStorage(string str)
+    {
+        buffer.Insert(str, buffer.GetCursorPosition());
+    }
 
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool TextOut(IntPtr hdc, int x, int y, string lpString, int nCount);
@@ -261,5 +318,6 @@ partial class Program
     [DllImport("gdi32.dll", SetLastError = true)]
     public static extern IntPtr CreateFontW(int nHeight, int nWidth, int nEscapement, int nOrientation, int fnWeight, uint fdwItalic, uint fdwUnderline, uint fdwStrikeOut, uint fdwCharSet, uint fdwOutputPrecision, uint fdwClipPrecision, uint fdwQuality, uint fdwPitchAndFamily, string lpszFace);
 
-    record InputCursor(int X, int Y);
+    record InputDrawCursor(int X, int Y);
+    
 }
